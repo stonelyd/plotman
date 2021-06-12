@@ -16,20 +16,22 @@ from plotman import job, manager, plot_util
 # TODO : write-protect and delete-protect archived plots
 
 def spawn_archive_process(dir_cfg, all_jobs):
-    '''Spawns a new archive process using the command created 
+    '''Spawns a new archive process using the command created
     in the archive() function. Returns archiving status and a log message to print.'''
 
     log_message = None
     archiving_status = None
-    
+
     # Look for running archive jobs.  Be robust to finding more than one
     # even though the scheduler should only run one at a time.
     arch_jobs = get_running_archive_jobs(dir_cfg.archive)
-    
+    # print('running arch jobs->', arch_jobs)
+
     if not arch_jobs:
         (should_start, status_or_cmd) = archive(dir_cfg, all_jobs)
         if not should_start:
             archiving_status = status_or_cmd
+            print('Archive Status->', archiving_status)
         else:
             cmd = status_or_cmd
             # TODO: do something useful with output instead of DEVNULL
@@ -37,7 +39,7 @@ def spawn_archive_process(dir_cfg, all_jobs):
                     shell=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.STDOUT,
-                    start_new_session=True) 
+                    start_new_session=True)
             log_message = 'Starting archive: ' + cmd
             # At least for now it seems that even if we get a new running
             # archive jobs list it doesn't contain the new rsync process.
@@ -51,7 +53,7 @@ def spawn_archive_process(dir_cfg, all_jobs):
         archiving_status = 'pid: ' + ', '.join(map(str, arch_jobs))
 
     return archiving_status, log_message
-            
+
 def compute_priority(phase, gb_free, n_plots):
     # All these values are designed around dst buffer dirs of about
     # ~2TB size and containing k32 plots.  TODO: Generalize, and
@@ -71,7 +73,7 @@ def compute_priority(phase, gb_free, n_plots):
             priority -= 16
         elif (phase >= job.Phase(3, 7)):
             priority -= 32
-        
+
     # If a drive is getting full, we should prioritize it
     if (gb_free < 1000):
         priority += 1 + int((1000 - gb_free) / 100)
@@ -86,8 +88,9 @@ def compute_priority(phase, gb_free, n_plots):
 
 def get_archdir_freebytes(arch_cfg):
     archdir_freebytes = {}
-    df_cmd = ('ssh %s@%s df -aBK | grep " %s/"' %
+    df_cmd = ('ssh %s@%s df -aBK | grep " %s"' %
         (arch_cfg.rsyncd_user, arch_cfg.rsyncd_host, arch_cfg.rsyncd_path) )
+    # print('dmc->',df_cmd)
     with subprocess.Popen(df_cmd, shell=True, stdout=subprocess.PIPE) as proc:
         for line in proc.stdout.readlines():
             fields = line.split()
@@ -100,11 +103,14 @@ def get_archdir_freebytes(arch_cfg):
     return archdir_freebytes
 
 def rsync_dest(arch_cfg, arch_dir):
-    rsync_path = arch_dir.replace(arch_cfg.rsyncd_path, arch_cfg.rsyncd_module)
-    if rsync_path.startswith('/'):
-        rsync_path = rsync_path[1:]  # Avoid dup slashes.  TODO use path join?
-    rsync_url = 'rsync://%s@%s:12000/%s' % (
+    # rsync_path = arch_dir.replace(arch_cfg.rsyncd_path, arch_cfg.rsyncd_module)
+    rsync_path = arch_dir
+    # print('arch_dir->',arch_dir)
+    # if rsync_path.startswith('/'):
+    #     rsync_path = rsync_path[1:]  # Avoid dup slashes.  TODO use path join?
+    rsync_url = '%s@%s:%s' % (
             arch_cfg.rsyncd_user, arch_cfg.rsyncd_host, rsync_path)
+    # print('url->', rsync_url)
     return rsync_url
 
 # TODO: maybe consolidate with similar code in job.py?
@@ -124,13 +130,14 @@ def get_running_archive_jobs(arch_cfg):
 
 def archive(dir_cfg, all_jobs):
     '''Configure one archive job.  Needs to know all jobs so it can avoid IO
-    contention on the plotting dstdir drives.  Returns either (False, <reason>) 
+    contention on the plotting dstdir drives.  Returns either (False, <reason>)
     if we should not execute an archive job or (True, <cmd>) with the archive
     command if we should.'''
     if dir_cfg.archive is None:
         return (False, "No 'archive' settings declared in plotman.yaml")
 
     dir2ph = manager.dstdirs_to_furthest_phase(all_jobs)
+    # print('dir2ph->',dir2ph)
     best_priority = -100000000
     chosen_plot = None
 
@@ -139,7 +146,7 @@ def archive(dir_cfg, all_jobs):
         dir_plots = plot_util.list_k32_plots(d)
         gb_free = plot_util.df_b(d) / plot_util.GB
         n_plots = len(dir_plots)
-        priority = compute_priority(ph, gb_free, n_plots) 
+        priority = compute_priority(ph, gb_free, n_plots)
         if priority >= best_priority and dir_plots:
             best_priority = priority
             chosen_plot = dir_plots[0]
@@ -154,11 +161,12 @@ def archive(dir_cfg, all_jobs):
     # Pick first archive dir with sufficient space
     #
     archdir_freebytes = get_archdir_freebytes(dir_cfg.archive)
+    print ('free bytes->', archdir_freebytes)
     if not archdir_freebytes:
         return(False, 'No free archive dirs found.')
-    
+
     archdir = ''
-    available = [(d, space) for (d, space) in archdir_freebytes.items() if 
+    available = [(d, space) for (d, space) in archdir_freebytes.items() if
                  space > 1.2 * plot_util.get_k32_plotsize()]
     if len(available) > 0:
         index = min(dir_cfg.archive.index, len(available) - 1)
@@ -166,12 +174,14 @@ def archive(dir_cfg, all_jobs):
 
     if not archdir:
         return(False, 'No archive directories found with enough free space')
-    
+
     msg = 'Found %s with ~%d GB free' % (archdir, freespace / plot_util.GB)
+    print(msg)
 
     bwlimit = dir_cfg.archive.rsyncd_bwlimit
     throttle_arg = ('--bwlimit=%d' % bwlimit) if bwlimit else ''
     cmd = ('rsync %s --compress-level=0 --remove-source-files -P %s %s' %
             (throttle_arg, chosen_plot, rsync_dest(dir_cfg.archive, archdir)))
-
+    print ('cmd->', cmd)
+    # exit()
     return (True, cmd)

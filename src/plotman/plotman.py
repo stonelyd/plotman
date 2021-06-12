@@ -27,7 +27,7 @@ class PlotmanArgParser:
         sp.add_parser('version', help='print the version')
 
         sp.add_parser('status', help='show current plotting status')
- 
+
         sp.add_parser('dirs', help='show directories info')
 
         sp.add_parser('interactive', help='run interactive control/monitoring mode')
@@ -87,6 +87,7 @@ def get_term_width():
     return columns
 
 def main():
+
     random.seed()
 
     pm_parser = PlotmanArgParser()
@@ -167,6 +168,7 @@ def main():
 
         # Directories report
         elif args.cmd == 'dirs':
+            print('cfg.directories->', cfg.directories)
             print(reporting.dirs_report(jobs, cfg.directories, cfg.scheduling, get_term_width()))
 
         elif args.cmd == 'interactive':
@@ -182,7 +184,7 @@ def main():
                     time.sleep(60)
                     jobs = Job.get_running_jobs(cfg.directories.log)
                 firstit = False
-
+                # print('here')
                 archiving_status, log_message = archive.spawn_archive_process(cfg.directories, jobs)
                 if log_message:
                     print(log_message)
@@ -192,7 +194,7 @@ def main():
         elif args.cmd == 'dsched':
             for (d, ph) in manager.dstdirs_to_furthest_phase(jobs).items():
                 print('  %s : %s' % (d, str(ph)))
-        
+
         #
         # Job control commands
         #

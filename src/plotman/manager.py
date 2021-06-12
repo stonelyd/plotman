@@ -43,6 +43,16 @@ def dstdirs_to_youngest_phase(all_jobs):
             result[j.dstdir] = j.progress()
     return result
 
+def dstdirs_to_match_tempdir(tempdir):
+    '''Return a dest dir on same drive as tempdir.'''
+    result = {}
+    print ('tempdir->.',tempdir)
+    print ('dirname->.',os.path.dirname(tempdir))
+    result = os.path.dirname(tempdir) + '/final'
+    print ('result->.',result)
+    # exit()
+    return result
+
 def phases_permit_new_job(phases, d, sched_cfg, dir_cfg):
     '''Scheduling logic: return True if it's OK to start a new job on a tmp dir
        with existing jobs in the provided phases.'''
@@ -89,7 +99,7 @@ def maybe_start_new_plot(dir_cfg, sched_cfg, plotting_cfg):
                 if phases_permit_new_job(phases, d, sched_cfg, dir_cfg) ]
         rankable = [ (d, phases[0]) if phases else (d, job.Phase(known=False))
                 for (d, phases) in eligible ]
-        
+
         if not eligible:
             wait_reason = 'no eligible tempdirs (%ds/%ds)' % (youngest_job_age, global_stagger)
         else:
@@ -101,7 +111,8 @@ def maybe_start_new_plot(dir_cfg, sched_cfg, plotting_cfg):
                       if d in dir_cfg.dst and ph is not None}
             unused_dirs = [d for d in dir_cfg.dst if d not in dir2ph.keys()]
             dstdir = ''
-            if unused_dirs: 
+            # dstdir = dstdirs_to_match_tempdir(tmpdir)
+            if unused_dirs:
                 dstdir = random.choice(unused_dirs)
             else:
                 dstdir = max(dir2ph, key=dir2ph.get)
